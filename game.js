@@ -5,6 +5,7 @@ const overlayText = document.getElementById("overlayText");
 const startButton = document.getElementById("startButton");
 const joystick = document.getElementById("joystick");
 const stickThumb = document.getElementById("stickThumb");
+const touchControls = document.querySelector(".touch-controls");
 const boostTouch = document.getElementById("boostTouch");
 const fireTouch = document.getElementById("fireTouch");
 const scoreEl = document.getElementById("score");
@@ -16,6 +17,7 @@ const healthBar = document.querySelector("#healthBar span");
 
 const W = canvas.width;
 const H = canvas.height;
+const GEMS_FOR_SHOT = 3;
 const keys = new Set();
 const touchInput = {
   active: false,
@@ -387,8 +389,8 @@ function updatePickups(dt) {
       } else if (pickup.type === "gem") {
         state.gems += 1;
         state.score += 35;
-        if (state.gems >= 5) {
-          state.gems -= 5;
+        if (state.gems >= GEMS_FOR_SHOT) {
+          state.gems -= GEMS_FOR_SHOT;
           state.shots += 1;
           addWake(state.boat.x, state.boat.y, "rgba(200, 255, 241, 0.95)", 0.9, 14);
         }
@@ -420,15 +422,17 @@ function endGame() {
   startButton.textContent = "Sail Again";
   overlay.classList.remove("hidden");
   playSound("gameOver");
+  updateHud();
 }
 
 function updateHud() {
   scoreEl.textContent = Math.floor(state.score);
   bestEl.textContent = state.best;
   threatEl.textContent = state.threatLevel;
-  gemsEl.textContent = `${state.gems}/5`;
+  gemsEl.textContent = `${state.gems}/${GEMS_FOR_SHOT}`;
   shotsEl.textContent = state.shots;
   healthBar.style.width = `${state.boat ? state.boat.health : 100}%`;
+  touchControls.classList.toggle("is-visible", state.mode === "playing");
   fireTouch.classList.toggle("is-ready", state.mode === "playing" && state.shots > 0);
 }
 
