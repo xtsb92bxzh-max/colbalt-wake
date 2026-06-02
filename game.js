@@ -13,6 +13,7 @@ const bestEl = document.getElementById("best");
 const threatEl = document.getElementById("threat");
 const gemsEl = document.getElementById("gems");
 const shotsEl = document.getElementById("shots");
+const propEl = document.getElementById("prop");
 const healthBar = document.querySelector("#healthBar span");
 
 const W = canvas.width;
@@ -35,15 +36,20 @@ const state = {
   best: Number(localStorage.getItem(bestKey) || 0),
   spawnTimer: 0,
   pickupTimer: 0,
+  obstacleTimer: 0,
+  helicopterTimer: 0,
   shake: 0,
   waveOffset: 0,
   threatLevel: 1,
   gems: 0,
   shots: 0,
   fireCooldown: 0,
+  propFoulTimer: 0,
   boat: null,
   orcas: [],
   pickups: [],
+  obstacles: [],
+  helicopters: [],
   projectiles: [],
   wakes: []
 };
@@ -69,12 +75,15 @@ function resetGame() {
   state.score = 0;
   state.spawnTimer = 0;
   state.pickupTimer = 4;
+  state.obstacleTimer = 10;
+  state.helicopterTimer = 22;
   state.shake = 0;
   state.waveOffset = 0;
   state.threatLevel = 1;
   state.gems = 0;
   state.shots = 0;
   state.fireCooldown = 0;
+  state.propFoulTimer = 0;
   state.boat = {
     x: W * 0.5,
     y: H * 0.58,
@@ -88,6 +97,8 @@ function resetGame() {
   };
   state.orcas = [createOrca(true)];
   state.pickups = [createPickup("gem"), createPickup()];
+  state.obstacles = [];
+  state.helicopters = [];
   state.projectiles = [];
   state.wakes = [];
   overlay.classList.add("hidden");
@@ -121,14 +132,45 @@ function createOrca(initial = false) {
   };
 }
 
-function createPickup(type = null) {
+function createPickup(type = null, x = null, y = null) {
   const roll = Math.random();
   return {
-    x: 24 + Math.random() * (W - 48),
-    y: 32 + Math.random() * (H - 56),
+    x: x ?? 24 + Math.random() * (W - 48),
+    y: y ?? 32 + Math.random() * (H - 56),
     type: type || (roll < 0.5 ? "gem" : roll < 0.68 ? "repair" : "score"),
     bob: Math.random() * Math.PI * 2,
     radius: 7
+  };
+}
+
+function createObstacle(type = null) {
+  const obstacle = {
+    x: 24 + Math.random() * (W - 48),
+    y: 34 + Math.random() * (H - 62),
+    type: type || (Math.random() < 0.5 ? "seaweed" : "lobster"),
+    bob: Math.random() * Math.PI * 2,
+    life: 30,
+    radius: 10
+  };
+
+  if (state.boat && distance(obstacle, state.boat) < 72) {
+    obstacle.x = W - obstacle.x;
+    obstacle.y = H - obstacle.y;
+  }
+
+  return obstacle;
+}
+
+function createHelicopter() {
+  const fromLeft = Math.random() < 0.5;
+  return {
+    x: fromLeft ? -28 : W + 28,
+    y: 30 + Math.random() * 44,
+    vx: fromLeft ? 58 : -58,
+    dropped: false,
+    dropX: 72 + Math.random() * (W - 144),
+    blade: 0,
+    radius: 12
   };
 }
 
@@ -158,13 +200,18 @@ function update(dt) {
   state.score += dt * 10;
   state.spawnTimer -= dt;
   state.pickupTimer -= dt;
+  state.obstacleTimer -= dt;
+  state.helicopterTimer -= dt;
   state.fireCooldown = Math.max(0, state.fireCooldown - dt);
+  state.propFoulTimer = Math.max(0, state.propFoulTimer - dt);
   state.shake = Math.max(0, state.shake - dt * 20);
 
   updateBoat(dt);
   updateProjectiles(dt);
   updateOrcas(dt);
   updatePickups(dt);
+  updateObstacles(dt);
+  updateHelicopters(dt);
   updateWakes(dt);
   updateHud();
 }
@@ -185,7 +232,10 @@ function getDifficulty() {
     recoverTime: clamp(1.05 - level * 0.055, 0.5, 1.05),
     spawnDelay: clamp(12 - level * 0.8, 4.5, 12),
     pickupLimit: level >= 6 ? 2 : 3,
-    pickupDelay: clamp(6.5 - level * 0.35, 3.5, 6.5)
+    pickupDelay: clamp(6.5 - level * 0.35, 3.5, 6.5),
+    obstacleLimit: level < 3 ? 0 : clamp(1 + Math.floor((level - 3) * 0.85), 1, 6),
+    obstacleDelay: level < 3 ? 12 : clamp(11 - level * 1.1, 2.4, 8),
+    helicopterDelay: clamp(44 - level * 2.5, 24, 44)
   };
 }
 
@@ -256,8 +306,9 @@ function updateBoat(dt) {
   ay += touchInput.y;
 
   const moving = Math.hypot(ax, ay) > 0.05;
+  const propFouled = state.propFoulTimer > 0;
   let boostActive = false;
-  if ((keys.has("Space") || touchInput.boost) && boat.boost > 0 && moving) {
+  if ((keys.has("Space") || touchInput.boost) && boat.boost > 0 && moving && !propFouled) {
     boostActive = true;
     boat.boost = Math.max(0, boat.boost - dt * 38);
     boat.boostCooldown = 0.6;
@@ -275,11 +326,12 @@ function updateBoat(dt) {
     boat.angle = Math.atan2(ay, ax);
   }
 
-  const accel = boostActive ? 170 : 108;
+  const accel = propFouled ? 0 : boostActive ? 170 : 108;
   boat.vx += ax * accel * dt;
   boat.vy += ay * accel * dt;
-  boat.vx *= Math.pow(0.08, dt);
-  boat.vy *= Math.pow(0.08, dt);
+  const drag = propFouled ? 0.015 : 0.08;
+  boat.vx *= Math.pow(drag, dt);
+  boat.vy *= Math.pow(drag, dt);
   boat.x += boat.vx * dt;
   boat.y += boat.vy * dt;
   boat.x = clamp(boat.x, 12, W - 12);
@@ -386,6 +438,9 @@ function updatePickups(dt) {
     if (distance(pickup, state.boat) < pickup.radius + state.boat.radius) {
       if (pickup.type === "repair") {
         state.boat.health = Math.min(100, state.boat.health + 22);
+      } else if (pickup.type === "medkit") {
+        state.boat.health = Math.min(100, state.boat.health + 15);
+        state.score += 50;
       } else if (pickup.type === "gem") {
         state.gems += 1;
         state.score += 35;
@@ -394,7 +449,7 @@ function updatePickups(dt) {
           state.shots += 1;
           addWake(state.boat.x, state.boat.y, "rgba(200, 255, 241, 0.95)", 0.9, 14);
         }
-      } else {
+      } else if (pickup.type === "score") {
         state.score += 120;
       }
       playSound("pickup");
@@ -403,6 +458,58 @@ function updatePickups(dt) {
     }
     return true;
   });
+}
+
+function updateObstacles(dt) {
+  const difficulty = getDifficulty();
+  if (state.obstacles.length < difficulty.obstacleLimit && state.obstacleTimer <= 0) {
+    state.obstacles.push(createObstacle());
+    state.obstacleTimer = difficulty.obstacleDelay + Math.random() * 3;
+  }
+
+  for (const obstacle of state.obstacles) {
+    obstacle.bob += dt * 2.5;
+    obstacle.life -= dt;
+  }
+
+  state.obstacles = state.obstacles.filter((obstacle) => {
+    if (distance(obstacle, state.boat) < obstacle.radius + state.boat.radius) {
+      foulProp(obstacle);
+      return false;
+    }
+    return obstacle.life > 0;
+  });
+}
+
+function updateHelicopters(dt) {
+  const difficulty = getDifficulty();
+  if (difficulty.level >= 2 && state.helicopterTimer <= 0 && state.helicopters.length === 0) {
+    state.helicopters.push(createHelicopter());
+    state.helicopterTimer = difficulty.helicopterDelay + Math.random() * 18;
+  }
+
+  state.helicopters = state.helicopters.filter((helicopter) => {
+    helicopter.x += helicopter.vx * dt;
+    helicopter.blade += dt * 18;
+
+    const passedDrop = helicopter.vx > 0 ? helicopter.x >= helicopter.dropX : helicopter.x <= helicopter.dropX;
+    if (!helicopter.dropped && passedDrop) {
+      helicopter.dropped = true;
+      state.pickups.push(createPickup("medkit", helicopter.x, helicopter.y + 16));
+      addWake(helicopter.x, helicopter.y + 16, "rgba(255, 211, 107, 0.76)", 0.55, 8);
+    }
+
+    return helicopter.x > -44 && helicopter.x < W + 44;
+  });
+}
+
+function foulProp(obstacle) {
+  state.propFoulTimer = 2;
+  state.shake = Math.max(state.shake, 2.5);
+  state.score = Math.max(0, state.score - 15);
+  state.boat.vx *= 0.25;
+  state.boat.vy *= 0.25;
+  addWake(obstacle.x, obstacle.y, "rgba(63, 220, 85, 0.82)", 0.95, 14);
 }
 
 function updateWakes(dt) {
@@ -431,6 +538,7 @@ function updateHud() {
   threatEl.textContent = state.threatLevel;
   gemsEl.textContent = `${state.gems}/${GEMS_FOR_SHOT}`;
   shotsEl.textContent = state.shots;
+  propEl.textContent = state.propFoulTimer > 0 ? "Fouled" : "OK";
   healthBar.style.width = `${state.boat ? state.boat.health : 100}%`;
   touchControls.classList.toggle("is-visible", state.mode === "playing");
   fireTouch.classList.toggle("is-ready", state.mode === "playing" && state.shots > 0);
@@ -444,15 +552,47 @@ function draw() {
   drawOcean();
   drawWakes();
   if (state.mode === "playing") {
+    for (const helicopter of state.helicopters) drawHelicopter(helicopter);
+    for (const obstacle of state.obstacles) drawObstacle(obstacle);
     for (const pickup of state.pickups) drawPickup(pickup);
     for (const orca of state.orcas) drawOrca(orca);
     for (const shot of state.projectiles) drawProjectile(shot);
     drawBoat(state.boat);
     drawBoostMeter(state.boat);
+    drawPropWarning();
   } else {
     drawAttractScene();
   }
   ctx.restore();
+}
+
+function drawObstacle(obstacle) {
+  const y = Math.round(obstacle.y + Math.sin(obstacle.bob) * 1.5);
+  if (obstacle.type === "seaweed") {
+    ctx.fillStyle = "#1f8f4d";
+    pixelRect(obstacle.x - 9, y + 3, 18, 4);
+    ctx.fillStyle = "#3fdc55";
+    pixelRect(obstacle.x - 8, y - 5, 3, 10);
+    pixelRect(obstacle.x - 2, y - 8, 3, 13);
+    pixelRect(obstacle.x + 5, y - 4, 3, 9);
+    ctx.fillStyle = "#0f5b79";
+    pixelRect(obstacle.x - 6, y - 1, 3, 3);
+    pixelRect(obstacle.x + 1, y + 1, 3, 3);
+    return;
+  }
+
+  ctx.fillStyle = "#d85b2c";
+  pixelRect(obstacle.x - 7, y - 5, 14, 10);
+  ctx.fillStyle = "#ffd36b";
+  pixelRect(obstacle.x - 4, y - 8, 8, 3);
+  ctx.fillStyle = "#071823";
+  pixelRect(obstacle.x - 4, y - 2, 8, 2);
+  ctx.strokeStyle = "rgba(7, 24, 35, 0.7)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(Math.round(obstacle.x + 7), y);
+  ctx.lineTo(Math.round(obstacle.x + 14), y + 8);
+  ctx.stroke();
 }
 
 function drawOcean() {
@@ -518,8 +658,71 @@ function drawOrca(orca) {
   ctx.restore();
 }
 
+function drawHelicopter(helicopter) {
+  ctx.save();
+  ctx.translate(Math.round(helicopter.x), Math.round(helicopter.y));
+  ctx.scale(helicopter.vx > 0 ? -0.75 : 0.75, 0.75);
+
+  const bladeLight = Math.floor(helicopter.blade) % 2 === 0;
+
+  ctx.fillStyle = bladeLight ? "rgba(200, 255, 241, 0.72)" : "rgba(156, 199, 204, 0.72)";
+  pixelRect(-24, -22, 48, 4);
+  pixelRect(-16, -26, 32, 4);
+  ctx.fillStyle = "#071823";
+  pixelRect(-2, -17, 4, 8);
+
+  ctx.fillStyle = "#071823";
+  pixelRect(-19, -7, 34, 16);
+  pixelRect(14, -3, 23, 6);
+  pixelRect(33, -8, 10, 16);
+
+  ctx.fillStyle = "#f0322d";
+  pixelRect(-17, -6, 30, 14);
+  pixelRect(-12, -10, 17, 4);
+  pixelRect(13, -1, 22, 4);
+  pixelRect(36, -6, 6, 12);
+
+  ctx.fillStyle = "#b91424";
+  pixelRect(-7, -3, 11, 10);
+  pixelRect(5, 2, 11, 5);
+
+  ctx.fillStyle = "#9fd3f2";
+  pixelRect(-15, -13, 12, 8);
+  pixelRect(-2, -14, 13, 7);
+  pixelRect(38, -3, 4, 7);
+  ctx.fillStyle = "#d8f5ff";
+  pixelRect(-12, -12, 4, 5);
+  pixelRect(4, -13, 4, 5);
+  pixelRect(39, -1, 3, 5);
+
+  ctx.fillStyle = "#fff8df";
+  pixelRect(-20, -2, 5, 5);
+  ctx.fillStyle = "#071823";
+  pixelRect(-13, 10, 3, 9);
+  pixelRect(3, 10, 3, 9);
+  pixelRect(-18, 18, 30, 3);
+
+  ctx.fillStyle = bladeLight ? "#c8fff1" : "#9cc7cc";
+  pixelRect(31, -12, 14, 3);
+  pixelRect(37, -18, 3, 14);
+  ctx.fillStyle = "#f06c3d";
+  pixelRect(-1, 9, 3, 6);
+  ctx.restore();
+}
+
 function drawPickup(pickup) {
   const y = Math.round(pickup.y + Math.sin(pickup.bob) * 2);
+  if (pickup.type === "medkit") {
+    ctx.fillStyle = "#fff8df";
+    pixelRect(pickup.x - 6, y - 6, 12, 12);
+    ctx.fillStyle = "#f06c3d";
+    pixelRect(pickup.x - 2, y - 5, 4, 10);
+    pixelRect(pickup.x - 5, y - 2, 10, 4);
+    ctx.fillStyle = "#071823";
+    pixelRect(pickup.x - 6, y + 5, 12, 2);
+    return;
+  }
+
   if (pickup.type === "gem") {
     ctx.fillStyle = "#c8fff1";
     pixelRect(pickup.x - 3, y - 6, 6, 3);
@@ -554,8 +757,20 @@ function drawBoostMeter(boat) {
   const y = H - 12;
   ctx.fillStyle = "#071823";
   pixelRect(x, y, 46, 5);
-  ctx.fillStyle = "#c8fff1";
+  ctx.fillStyle = state.propFoulTimer > 0 ? "#f06c3d" : "#c8fff1";
   pixelRect(x + 1, y + 1, Math.round(44 * (boat.boost / 100)), 3);
+}
+
+function drawPropWarning() {
+  if (state.propFoulTimer <= 0) {
+    return;
+  }
+
+  const blink = Math.floor(state.propFoulTimer * 8) % 2 === 0;
+  ctx.fillStyle = blink ? "#f06c3d" : "#ffd36b";
+  pixelRect(W / 2 - 31, H - 23, 62, 9);
+  ctx.fillStyle = "#071823";
+  pixelRect(W / 2 - 28, H - 21, 56, 5);
 }
 
 function drawAttractScene() {
