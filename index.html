@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Cobolt Wake</title>
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+    <main class="shell">
+      <section class="game-frame" aria-label="Cobolt Wake game">
+        <canvas id="game" width="384" height="216" aria-label="Cobolt Wake game canvas"></canvas>
+        <div class="hud" aria-hidden="true">
+          <div class="hud-group">
+            <span class="label">Hull</span>
+            <div class="health" id="healthBar"><span></span></div>
+          </div>
+          <div class="hud-group right">
+            <span>Score <strong id="score">0</strong></span>
+            <span>Best <strong id="best">0</strong></span>
+          </div>
+        </div>
+        <div class="overlay" id="overlay">
+          <h1>Cobolt Wake</h1>
+          <p id="overlayText">Bolt across the blue, read the ripples, and survive the hunt.</p>
+          <button id="startButton" type="button">Cast Off</button>
+        </div>
+      </section>
+      <section class="touch-controls" aria-label="Touch controls">
+        <div class="stick-zone" id="joystick" role="application" aria-label="Drag to steer">
+          <span class="stick-mark top">▲</span>
+          <span class="stick-mark right">▶</span>
+          <span class="stick-mark bottom">▼</span>
+          <span class="stick-mark left">◀</span>
+          <span class="stick-thumb" id="stickThumb"></span>
+        </div>
+        <button class="boost-touch" id="boostTouch" type="button" aria-label="Hold for boost">Boost</button>
+      </section>
+      <footer class="controls" aria-label="Game controls">
+        <span>Move: WASD / Arrows</span>
+        <span>Touch: Drag Pad</span>
+        <span>Boost: Space</span>
+        <span>Restart: Enter</span>
+      </footer>
+    </main>
+    <script src="game.js"></script>
+  </body>
+</html>
