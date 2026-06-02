@@ -16,6 +16,9 @@
             <div class="health" id="healthBar"><span></span></div>
           </div>
           <div class="hud-group right">
+            <span>Threat <strong id="threat">1</strong></span>
+            <span>Gems <strong id="gems">0/5</strong></span>
+            <span>Shots <strong id="shots">0</strong></span>
             <span>Score <strong id="score">0</strong></span>
             <span>Best <strong id="best">0</strong></span>
           </div>
@@ -34,12 +37,16 @@
           <span class="stick-mark left">◀</span>
           <span class="stick-thumb" id="stickThumb"></span>
         </div>
-        <button class="boost-touch" id="boostTouch" type="button" aria-label="Hold for boost">Boost</button>
+        <div class="action-buttons">
+          <button class="boost-touch" id="boostTouch" type="button" aria-label="Hold for boost">Boost</button>
+          <button class="fire-touch" id="fireTouch" type="button" aria-label="Fire charged harpoon">Fire</button>
+        </div>
       </section>
       <footer class="controls" aria-label="Game controls">
         <span>Move: WASD / Arrows</span>
         <span>Touch: Drag Pad</span>
         <span>Boost: Space</span>
+        <span>Fire: F</span>
         <span>Restart: Enter</span>
       </footer>
     </main>

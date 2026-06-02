@@ -229,9 +229,37 @@ button:hover {
   touch-action: none;
 }
 
-.boost-touch.is-active {
+.action-buttons {
+  display: grid;
+  gap: 10px;
+}
+
+.boost-touch.is-active,
+.fire-touch.is-ready {
   background: #ffd36b;
   color: #071823;
+}
+
+.boost-touch.is-active {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0 #08141f;
+}
+
+.fire-touch {
+  width: 112px;
+  min-width: 112px;
+  height: 66px;
+  padding: 0;
+  background: #294f5e;
+  color: #9cc7cc;
+  touch-action: none;
+}
+
+.fire-touch.is-ready {
+  box-shadow: 5px 5px 0 #08141f, inset 0 0 0 3px #fff4c7;
+}
+
+.fire-touch.is-active {
   transform: translate(2px, 2px);
   box-shadow: 2px 2px 0 #08141f;
 }
@@ -306,24 +334,35 @@ button:hover {
     display: grid;
     grid-template-columns: 1fr;
     justify-items: center;
-    gap: 10px;
+    gap: 8px;
   }
 
   .stick-zone {
-    width: 92px;
-    height: 92px;
+    width: 86px;
+    height: 86px;
   }
 
   .stick-thumb {
-    width: 30px;
-    height: 30px;
+    width: 28px;
+    height: 28px;
   }
 
   .boost-touch {
     width: 92px;
     min-width: 92px;
-    height: 58px;
+    height: 52px;
     font-size: 15px;
+  }
+
+  .fire-touch {
+    width: 92px;
+    min-width: 92px;
+    height: 50px;
+    font-size: 15px;
+  }
+
+  .action-buttons {
+    gap: 8px;
   }
 
   .controls {

@@ -6,8 +6,12 @@ const startButton = document.getElementById("startButton");
 const joystick = document.getElementById("joystick");
 const stickThumb = document.getElementById("stickThumb");
 const boostTouch = document.getElementById("boostTouch");
+const fireTouch = document.getElementById("fireTouch");
 const scoreEl = document.getElementById("score");
 const bestEl = document.getElementById("best");
+const threatEl = document.getElementById("threat");
+const gemsEl = document.getElementById("gems");
+const shotsEl = document.getElementById("shots");
 const healthBar = document.querySelector("#healthBar span");
 
 const W = canvas.width;
@@ -31,9 +35,14 @@ const state = {
   pickupTimer: 0,
   shake: 0,
   waveOffset: 0,
+  threatLevel: 1,
+  gems: 0,
+  shots: 0,
+  fireCooldown: 0,
   boat: null,
   orcas: [],
   pickups: [],
+  projectiles: [],
   wakes: []
 };
 
@@ -60,6 +69,10 @@ function resetGame() {
   state.pickupTimer = 4;
   state.shake = 0;
   state.waveOffset = 0;
+  state.threatLevel = 1;
+  state.gems = 0;
+  state.shots = 0;
+  state.fireCooldown = 0;
   state.boat = {
     x: W * 0.5,
     y: H * 0.58,
@@ -72,9 +85,11 @@ function resetGame() {
     radius: 8
   };
   state.orcas = [createOrca(true)];
-  state.pickups = [createPickup()];
+  state.pickups = [createPickup("gem"), createPickup()];
+  state.projectiles = [];
   state.wakes = [];
   overlay.classList.add("hidden");
+  updateHud();
 }
 
 function createOrca(initial = false) {
@@ -104,11 +119,12 @@ function createOrca(initial = false) {
   };
 }
 
-function createPickup() {
+function createPickup(type = null) {
+  const roll = Math.random();
   return {
     x: 24 + Math.random() * (W - 48),
     y: 32 + Math.random() * (H - 56),
-    type: Math.random() < 0.38 ? "repair" : "score",
+    type: type || (roll < 0.5 ? "gem" : roll < 0.68 ? "repair" : "score"),
     bob: Math.random() * Math.PI * 2,
     radius: 7
   };
@@ -136,16 +152,94 @@ function update(dt) {
   }
 
   state.time += dt;
+  state.threatLevel = getThreatLevel();
   state.score += dt * 10;
   state.spawnTimer -= dt;
   state.pickupTimer -= dt;
+  state.fireCooldown = Math.max(0, state.fireCooldown - dt);
   state.shake = Math.max(0, state.shake - dt * 20);
 
   updateBoat(dt);
+  updateProjectiles(dt);
   updateOrcas(dt);
   updatePickups(dt);
   updateWakes(dt);
   updateHud();
+}
+
+function getThreatLevel() {
+  return clamp(1 + Math.floor(state.time / 20), 1, 8);
+}
+
+function getDifficulty() {
+  const level = state.threatLevel;
+  const smooth = state.time / 140;
+  return {
+    level,
+    maxOrcas: clamp(1 + Math.floor((level - 1) / 2), 1, 5),
+    patrolAccel: 16 + level * 2.5,
+    warnTime: clamp(1.45 - level * 0.09, 0.62, 1.45),
+    chargeSpeed: 88 + level * 13 + smooth * 18,
+    recoverTime: clamp(1.05 - level * 0.055, 0.5, 1.05),
+    spawnDelay: clamp(12 - level * 0.8, 4.5, 12),
+    pickupLimit: level >= 6 ? 2 : 3,
+    pickupDelay: clamp(6.5 - level * 0.35, 3.5, 6.5)
+  };
+}
+
+function fireHarpoon() {
+  if (state.mode !== "playing" || state.shots <= 0 || state.fireCooldown > 0) {
+    return;
+  }
+
+  const boat = state.boat;
+  state.shots -= 1;
+  state.fireCooldown = 0.35;
+  const speed = 185;
+  const noseX = boat.x + Math.cos(boat.angle) * 11;
+  const noseY = boat.y + Math.sin(boat.angle) * 11;
+  state.projectiles.push({
+    x: noseX,
+    y: noseY,
+    vx: Math.cos(boat.angle) * speed + boat.vx * 0.25,
+    vy: Math.sin(boat.angle) * speed + boat.vy * 0.25,
+    angle: boat.angle,
+    radius: 4,
+    life: 1.4
+  });
+  addWake(noseX, noseY, "rgba(255, 211, 107, 0.85)", 0.35, 5);
+  updateHud();
+}
+
+function updateProjectiles(dt) {
+  state.projectiles = state.projectiles.filter((shot) => {
+    shot.life -= dt;
+    shot.x += shot.vx * dt;
+    shot.y += shot.vy * dt;
+    addWake(shot.x, shot.y, "rgba(255, 211, 107, 0.34)", 0.25, 2);
+
+    for (const orca of state.orcas) {
+      if (distance(shot, orca) < shot.radius + orca.radius + 2) {
+        repelOrca(orca, shot);
+        state.score += 75;
+        state.shake = 2;
+        return false;
+      }
+    }
+
+    return shot.life > 0 && shot.x > -16 && shot.x < W + 16 && shot.y > -16 && shot.y < H + 16;
+  });
+}
+
+function repelOrca(orca, shot) {
+  const angle = Math.atan2(orca.y - shot.y, orca.x - shot.x);
+  orca.state = "recover";
+  orca.timer = 1.2;
+  orca.warned = false;
+  orca.damaged = true;
+  orca.vx = Math.cos(angle) * 95;
+  orca.vy = Math.sin(angle) * 95;
+  addWake(orca.x, orca.y, "rgba(255, 211, 107, 0.95)", 0.8, 13);
 }
 
 function updateBoat(dt) {
@@ -195,11 +289,10 @@ function updateBoat(dt) {
 }
 
 function updateOrcas(dt) {
-  const difficulty = 1 + state.time / 70;
-  const maxOrcas = clamp(1 + Math.floor(state.time / 28), 1, 5);
-  if (state.orcas.length < maxOrcas && state.spawnTimer <= 0) {
+  const difficulty = getDifficulty();
+  if (state.orcas.length < difficulty.maxOrcas && state.spawnTimer <= 0) {
     state.orcas.push(createOrca());
-    state.spawnTimer = 12;
+    state.spawnTimer = difficulty.spawnDelay;
   }
 
   for (const orca of state.orcas) {
@@ -209,8 +302,8 @@ function updateOrcas(dt) {
       const dy = state.boat.y - orca.y;
       const angle = Math.atan2(dy, dx);
       orca.angle = angle;
-      orca.vx += Math.cos(angle) * 18 * dt;
-      orca.vy += Math.sin(angle) * 18 * dt;
+      orca.vx += Math.cos(angle) * difficulty.patrolAccel * dt;
+      orca.vy += Math.sin(angle) * difficulty.patrolAccel * dt;
       orca.vx *= Math.pow(0.18, dt);
       orca.vy *= Math.pow(0.18, dt);
       orca.x += orca.vx * dt;
@@ -218,7 +311,7 @@ function updateOrcas(dt) {
 
       if (orca.timer <= 0) {
         orca.state = "warn";
-        orca.timer = clamp(1.5 - difficulty * 0.14, 0.75, 1.5);
+        orca.timer = difficulty.warnTime;
         orca.warned = false;
         orca.damaged = false;
         orca.targetX = state.boat.x + state.boat.vx * 0.35;
@@ -235,7 +328,7 @@ function updateOrcas(dt) {
       if (orca.timer <= 0) {
         orca.state = "charge";
         orca.timer = 1.25;
-        orca.chargeSpeed = 86 + difficulty * 16;
+        orca.chargeSpeed = difficulty.chargeSpeed;
         const angle = Math.atan2(orca.targetY - orca.y, orca.targetX - orca.x);
         orca.vx = Math.cos(angle) * orca.chargeSpeed;
         orca.vy = Math.sin(angle) * orca.chargeSpeed;
@@ -262,7 +355,7 @@ function updateOrcas(dt) {
 
       if (orca.timer <= 0 || orca.x < -40 || orca.x > W + 40 || orca.y < -40 || orca.y > H + 40) {
         orca.state = "recover";
-        orca.timer = 0.9 + Math.random() * 0.6;
+        orca.timer = difficulty.recoverTime + Math.random() * 0.35;
       }
     }
 
@@ -277,9 +370,10 @@ function updateOrcas(dt) {
 }
 
 function updatePickups(dt) {
-  if (state.pickups.length < 3 && state.pickupTimer <= 0) {
+  const difficulty = getDifficulty();
+  if (state.pickups.length < difficulty.pickupLimit && state.pickupTimer <= 0) {
     state.pickups.push(createPickup());
-    state.pickupTimer = 5 + Math.random() * 4;
+    state.pickupTimer = difficulty.pickupDelay + Math.random() * 2;
   }
 
   for (const pickup of state.pickups) {
@@ -290,6 +384,14 @@ function updatePickups(dt) {
     if (distance(pickup, state.boat) < pickup.radius + state.boat.radius) {
       if (pickup.type === "repair") {
         state.boat.health = Math.min(100, state.boat.health + 22);
+      } else if (pickup.type === "gem") {
+        state.gems += 1;
+        state.score += 35;
+        if (state.gems >= 5) {
+          state.gems -= 5;
+          state.shots += 1;
+          addWake(state.boat.x, state.boat.y, "rgba(200, 255, 241, 0.95)", 0.9, 14);
+        }
       } else {
         state.score += 120;
       }
@@ -323,7 +425,11 @@ function endGame() {
 function updateHud() {
   scoreEl.textContent = Math.floor(state.score);
   bestEl.textContent = state.best;
+  threatEl.textContent = state.threatLevel;
+  gemsEl.textContent = `${state.gems}/5`;
+  shotsEl.textContent = state.shots;
   healthBar.style.width = `${state.boat ? state.boat.health : 100}%`;
+  fireTouch.classList.toggle("is-ready", state.mode === "playing" && state.shots > 0);
 }
 
 function draw() {
@@ -336,6 +442,7 @@ function draw() {
   if (state.mode === "playing") {
     for (const pickup of state.pickups) drawPickup(pickup);
     for (const orca of state.orcas) drawOrca(orca);
+    for (const shot of state.projectiles) drawProjectile(shot);
     drawBoat(state.boat);
     drawBoostMeter(state.boat);
   } else {
@@ -409,12 +516,33 @@ function drawOrca(orca) {
 
 function drawPickup(pickup) {
   const y = Math.round(pickup.y + Math.sin(pickup.bob) * 2);
+  if (pickup.type === "gem") {
+    ctx.fillStyle = "#c8fff1";
+    pixelRect(pickup.x - 3, y - 6, 6, 3);
+    pixelRect(pickup.x - 5, y - 3, 10, 6);
+    pixelRect(pickup.x - 3, y + 3, 6, 3);
+    ctx.fillStyle = "#2fb7cc";
+    pixelRect(pickup.x - 2, y - 2, 4, 4);
+    return;
+  }
+
   ctx.fillStyle = pickup.type === "repair" ? "#6ff096" : "#ffd36b";
   pixelRect(pickup.x - 5, y - 5, 10, 10);
   ctx.fillStyle = "#071823";
   pixelRect(pickup.x - 2, y - 2, 4, 4);
   ctx.fillStyle = "#fff8df";
   pixelRect(pickup.x - 1, y - 7, 2, 4);
+}
+
+function drawProjectile(shot) {
+  ctx.save();
+  ctx.translate(Math.round(shot.x), Math.round(shot.y));
+  ctx.rotate(shot.angle);
+  ctx.fillStyle = "#ffd36b";
+  pixelRect(-5, -1, 10, 2);
+  ctx.fillStyle = "#fff8df";
+  pixelRect(3, -2, 4, 4);
+  ctx.restore();
 }
 
 function drawBoostMeter(boat) {
@@ -464,11 +592,15 @@ function handleStart() {
 startButton.addEventListener("click", handleStart);
 
 window.addEventListener("keydown", (event) => {
-  if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(event.code)) {
+  if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "KeyF"].includes(event.code)) {
     event.preventDefault();
   }
   if (event.code === "Enter" && state.mode !== "playing") {
     handleStart();
+    return;
+  }
+  if (event.code === "KeyF") {
+    fireHarpoon();
     return;
   }
   keys.add(event.code);
@@ -535,6 +667,19 @@ function releaseBoost() {
 boostTouch.addEventListener("pointerup", releaseBoost);
 boostTouch.addEventListener("pointercancel", releaseBoost);
 boostTouch.addEventListener("lostpointercapture", releaseBoost);
+
+fireTouch.addEventListener("pointerdown", (event) => {
+  event.preventDefault();
+  fireTouch.classList.add("is-active");
+  fireHarpoon();
+});
+
+fireTouch.addEventListener("pointerup", () => {
+  fireTouch.classList.remove("is-active");
+});
+fireTouch.addEventListener("pointercancel", () => {
+  fireTouch.classList.remove("is-active");
+});
 
 updateHud();
 requestAnimationFrame(loop);
