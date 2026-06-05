@@ -20,6 +20,7 @@
             <span>Gems <strong id="gems">0/3</strong></span>
             <span>Shots <strong id="shots">0</strong></span>
             <span>Prop <strong id="prop">OK</strong></span>
+            <span id="shieldHud" hidden>Shield <strong id="shieldTime">0.0</strong>s</span>
             <span>Score <strong id="score">0</strong></span>
             <span>Best <strong id="best">0</strong></span>
           </div>
@@ -31,6 +32,7 @@
             <span><i class="key-icon gem-icon"></i> Gems charge weapons</span>
             <span><i class="key-icon gold-icon"></i> Gold adds points</span>
             <span><i class="key-icon health-icon"></i> Health kits restore HP</span>
+            <span><i class="key-icon shield-icon"></i> Shield repels orcas briefly</span>
             <span><i class="key-icon lobster-icon"></i> Lobster pots foul prop</span>
             <span><i class="key-icon seaweed-icon"></i> Seaweed fouls prop</span>
           </div>
@@ -39,7 +41,10 @@
         <div class="touch-controls" aria-label="Touch controls">
           <div class="action-buttons">
             <button class="boost-touch" id="boostTouch" type="button" aria-label="Hold for boost">Boost</button>
-            <button class="fire-touch" id="fireTouch" type="button" aria-label="Fire charged harpoon">Fire</button>
+            <div class="fire-row">
+              <button class="mine-touch" id="mineTouch" type="button" aria-label="Drop a mine">Mine</button>
+              <button class="fire-touch" id="fireTouch" type="button" aria-label="Fire charged harpoon">Fire</button>
+            </div>
           </div>
           <div class="stick-zone" id="joystick" role="application" aria-label="Drag to steer">
             <span class="stick-mark top">▲</span>
@@ -55,6 +60,7 @@
         <span>Touch: Drag Pad</span>
         <span>Boost: Space</span>
         <span>Fire: F</span>
+        <span>Mine: G</span>
         <span>Restart: Enter</span>
       </footer>
     </main>
